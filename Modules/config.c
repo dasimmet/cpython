@@ -54,6 +54,7 @@ extern PyObject* PyInit__sha512(void);
 extern PyObject* PyInit__socket(void);
 extern PyObject* PyInit_select(void);
 extern PyObject* PyInit_array(void);
+extern PyObject* PyInit__posixsubprocess(void);
 
 /* -- ADDMODULE MARKER 1 -- */
 
@@ -98,6 +99,7 @@ struct _inittab _PyImport_Inittab[] = {
     {"_socket", PyInit__socket},
     {"select", PyInit_select},
     {"array", PyInit_array},
+    {"_posixsubprocess", PyInit__posixsubprocess},
 
 /* -- ADDMODULE MARKER 2 -- */
 
