@@ -46,6 +46,7 @@ extern PyObject* PyInit__symtable(void);
 extern PyObject* PyInit_pwd(void);
 extern PyObject* PyInit_xxsubtype(void);
 extern PyObject* PyInit_zlib(void);
+extern PyObject* PyInit__struct(void);
 
 /* -- ADDMODULE MARKER 1 -- */
 
@@ -82,6 +83,7 @@ struct _inittab _PyImport_Inittab[] = {
     {"pwd", PyInit_pwd},
     {"xxsubtype", PyInit_xxsubtype},
     {"zlib", PyInit_zlib},
+    {"_struct", PyInit__struct},
 
 /* -- ADDMODULE MARKER 2 -- */
 

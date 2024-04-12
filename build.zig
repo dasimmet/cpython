@@ -639,6 +639,7 @@ pub fn build(b: *std.Build) void {
         "Modules/_operator.c",
         "Modules/_sre/sre.c",
         "Modules/_stat.c",
+        "Modules/_struct.c",
         "Modules/_threadmodule.c",
         "Modules/_tracemalloc.c",
         "Modules/_weakref.c",
