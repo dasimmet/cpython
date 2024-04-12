@@ -52,6 +52,7 @@ extern PyObject* PyInit_math(void);
 extern PyObject* PyInit__random(void);
 extern PyObject* PyInit__sha512(void);
 extern PyObject* PyInit__socket(void);
+extern PyObject* PyInit_select(void);
 
 /* -- ADDMODULE MARKER 1 -- */
 
@@ -94,6 +95,7 @@ struct _inittab _PyImport_Inittab[] = {
     {"_random", PyInit__random},
     {"_sha512", PyInit__sha512},
     {"_socket", PyInit__socket},
+    {"select", PyInit_select},
 
 /* -- ADDMODULE MARKER 2 -- */
 
