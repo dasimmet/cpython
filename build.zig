@@ -652,6 +652,7 @@ pub fn build(b: *std.Build) void {
         "Modules/getbuildinfo.c",
         "Modules/itertoolsmodule.c",
         "Modules/main.c",
+        "Modules/mathmodule.c",
         "Modules/posixmodule.c",
         "Modules/pwdmodule.c",
         "Modules/signalmodule.c",

@@ -48,6 +48,7 @@ extern PyObject* PyInit_xxsubtype(void);
 extern PyObject* PyInit_zlib(void);
 extern PyObject* PyInit__struct(void);
 extern PyObject* PyInit_binascii(void);
+extern PyObject* PyInit_math(void);
 
 /* -- ADDMODULE MARKER 1 -- */
 
@@ -86,6 +87,7 @@ struct _inittab _PyImport_Inittab[] = {
     {"zlib", PyInit_zlib},
     {"_struct", PyInit__struct},
     {"binascii", PyInit_binascii},
+    {"math", PyInit_math},
 
 /* -- ADDMODULE MARKER 2 -- */
 
