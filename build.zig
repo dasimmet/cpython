@@ -637,6 +637,7 @@ pub fn build(b: *std.Build) void {
         "Modules/_io/textio.c",
         "Modules/_localemodule.c",
         "Modules/_operator.c",
+        "Modules/_randommodule.c",
         "Modules/_sre/sre.c",
         "Modules/_stat.c",
         "Modules/_struct.c",
