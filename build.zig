@@ -644,6 +644,7 @@ pub fn build(b: *std.Build) void {
         "Modules/_tracemalloc.c",
         "Modules/_weakref.c",
         "Modules/atexitmodule.c",
+        "Modules/binascii.c",
         "Modules/config.c",
         "Modules/errnomodule.c",
         "Modules/faulthandler.c",
