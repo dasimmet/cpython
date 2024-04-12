@@ -22,9 +22,9 @@ pub fn build(b: *std.Build) void {
     });
     exe.linkLibC();
 
-    exe.addIncludePath("Include/internal");
-    exe.addIncludePath(".");
-    exe.addIncludePath("Include");
+    exe.addIncludePath(b.path("Include/internal"));
+    exe.addIncludePath(b.path("."));
+    exe.addIncludePath(b.path("Include"));
     exe.rdynamic = true;
 
     @setEvalBranchQuota(10000);
@@ -628,7 +628,7 @@ pub fn build(b: *std.Build) void {
         .WORDS_BIGENDIAN = null,
     }));
 
-    exe.addCSourceFiles(&.{
+    exe.addCSourceFiles(.{ .files = &.{
         "Programs/python.c",
         "Modules/getbuildinfo.c",
         "Parser/token.c",
@@ -774,15 +774,15 @@ pub fn build(b: *std.Build) void {
         "Modules/xxsubtype.c",
         "Python/deepfreeze/deepfreeze.c",
         "Python/frozen.c",
-    }, &.{
+    }, .flags = &.{
         "-fwrapv",
         "-std=c11",
         "-fvisibility=hidden",
         "-DPy_BUILD_CORE",
-    });
-    exe.addCSourceFiles(&.{
+    } });
+    exe.addCSourceFiles(.{ .files = &.{
         "Modules/getpath.c",
-    }, &.{
+    }, .flags = &.{
         "-fwrapv",
         "-std=c11",
         "-fvisibility=hidden",
@@ -795,18 +795,18 @@ pub fn build(b: *std.Build) void {
         "-DVPATH=\"\"",
         "-DPLATLIBDIR=\"lib\"",
         "-DPYTHONFRAMEWORK=\"\"",
-    });
+    } });
 
-    exe.addCSourceFiles(&.{
+    exe.addCSourceFiles(.{ .files = &.{
         "Python/dynload_shlib.c",
-    }, &.{
+    }, .flags = &.{
         "-fwrapv",
         "-std=c11",
         "-fvisibility=hidden",
         "-DPy_BUILD_CORE",
 
         "-DSOABI=\"cpython-311-x86_64-linux-gnu\"",
-    });
+    } });
 
     // This declares intent for the executable to be installed into the
     // standard location when the user invokes the "install" step (the default
