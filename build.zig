@@ -9,12 +9,18 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
+    const openssl_dep = b.dependency("openssl", .{
+        .target = target,
+        .optimize = optimize,
+    });
+
     const exe = b.addExecutable(.{
         .name = "cpython",
         .target = target,
         .optimize = optimize,
     });
     exe.linkLibrary(libz_dep.artifact("z"));
+    exe.linkLibrary(openssl_dep.artifact("openssl"));
     exe.linkLibC();
 
     exe.addIncludePath(b.path("Include/internal"));
@@ -640,6 +646,7 @@ pub fn build(b: *std.Build) void {
         "Modules/_posixsubprocess.c",
         "Modules/_randommodule.c",
         "Modules/_sre/sre.c",
+        "Modules/_ssl.c",
         "Modules/_stat.c",
         "Modules/_struct.c",
         "Modules/_threadmodule.c",
