@@ -56,6 +56,8 @@ extern PyObject* PyInit_select(void);
 extern PyObject* PyInit_array(void);
 extern PyObject* PyInit__posixsubprocess(void);
 extern PyObject* PyInit__ssl(void);
+extern PyObject* PyInit_unicodedata(void);
+extern PyObject* PyInit__contextvars(void);
 
 /* -- ADDMODULE MARKER 1 -- */
 
@@ -102,6 +104,8 @@ struct _inittab _PyImport_Inittab[] = {
     {"array", PyInit_array},
     {"_posixsubprocess", PyInit__posixsubprocess},
     {"_ssl", PyInit__ssl},
+    {"unicodedata", PyInit_unicodedata},
+    {"_contextvars", PyInit__contextvars},
 
 /* -- ADDMODULE MARKER 2 -- */
 
