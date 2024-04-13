@@ -3,6 +3,7 @@ const std = @import("std");
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
+    const t = target.result;
 
     const libz_dep = b.dependency("libz", .{
         .target = target,
@@ -57,13 +58,13 @@ pub fn build(b: *std.Build) void {
         .HAVE_CLOCK_GETTIME = 1,
         .HAVE_CLOCK_NANOSLEEP = 1,
         .HAVE_CLOCK_SETTIME = 1,
-        .HAVE_CLOSE_RANGE = 1,
+        .HAVE_CLOSE_RANGE = have(t.isGnuLibC()),
         .HAVE_COMPUTED_GOTOS = 1,
         .HAVE_CONFSTR = 1,
         .HAVE_CONNECT = 1,
         .HAVE_COPY_FILE_RANGE = 1,
         .HAVE_CTERMID = 1,
-        .HAVE_DECL_RTLD_DEEPBIND = 1,
+        .HAVE_DECL_RTLD_DEEPBIND = 0,
         .HAVE_DECL_RTLD_GLOBAL = 1,
         .HAVE_DECL_RTLD_LAZY = 1,
         .HAVE_DECL_RTLD_LOCAL = 1,
@@ -81,7 +82,7 @@ pub fn build(b: *std.Build) void {
         .HAVE_DUP = 1,
         .HAVE_DUP2 = 1,
         .HAVE_DUP3 = 1,
-        .HAVE_DYNAMIC_LOADING = 1,
+        .HAVE_DYNAMIC_LOADING = 0,
         .HAVE_ENDIAN_H = 1,
         .HAVE_EPOLL = 1,
         .HAVE_EPOLL_CREATE1 = 1,
@@ -239,7 +240,7 @@ pub fn build(b: *std.Build) void {
         .HAVE_POSIX_SPAWNP = 1,
         .HAVE_PREAD = 1,
         .HAVE_PREADV = 1,
-        .HAVE_PREADV2 = 1,
+        .HAVE_PREADV2 = have(t.isGnuLibC()),
         .HAVE_PRLIMIT = 1,
         .HAVE_PROTOTYPES = 1,
         .HAVE_PTHREAD_CONDATTR_SETCLOCK = 1,
@@ -250,7 +251,7 @@ pub fn build(b: *std.Build) void {
         .HAVE_PTY_H = 1,
         .HAVE_PWRITE = 1,
         .HAVE_PWRITEV = 1,
-        .HAVE_PWRITEV2 = 1,
+        .HAVE_PWRITEV2 = have(t.isGnuLibC()),
         .HAVE_READLINK = 1,
         .HAVE_READLINKAT = 1,
         .HAVE_READV = 1,
@@ -263,7 +264,7 @@ pub fn build(b: *std.Build) void {
         .HAVE_SCHED_SETAFFINITY = 1,
         .HAVE_SCHED_SETPARAM = 1,
         .HAVE_SCHED_SETSCHEDULER = 1,
-        .HAVE_SEM_CLOCKWAIT = 1,
+        .HAVE_SEM_CLOCKWAIT = have(t.isGnuLibC()),
         .HAVE_SEM_GETVALUE = 1,
         .HAVE_SEM_OPEN = 1,
         .HAVE_SEM_TIMEDWAIT = 1,
@@ -833,4 +834,8 @@ pub fn build(b: *std.Build) void {
         "-DSOABI=\"cpython-311-x86_64-linux-gnu\"",
     } });
     b.installArtifact(exe);
+}
+
+fn have(x: bool) ?u1 {
+    return if (x) 1 else null;
 }
