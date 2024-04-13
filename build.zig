@@ -31,7 +31,7 @@ pub fn build(b: *std.Build) void {
 
     @setEvalBranchQuota(10000);
     exe.addConfigHeader(b.addConfigHeader(.{
-        .style = .{ .autoconf = .{ .path = "pyconfig.h.in" } },
+        .style = .{ .autoconf = b.path("pyconfig.h.in") },
         .include_path = "pyconfig.h",
     }, .{
         .ALIGNOF_LONG = 8,
