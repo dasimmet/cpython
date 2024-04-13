@@ -672,6 +672,9 @@ pub fn build(b: *std.Build) void {
         "Modules/_blake2/blake2b_impl.c",
         "Modules/_blake2/blake2s_impl.c",
 
+        "Modules/_sha3/sha3module.c",
+        "Modules/_sha3/sha3.c",
+
         "Modules/posixmodule.c",
         "Modules/pwdmodule.c",
         "Modules/selectmodule.c",

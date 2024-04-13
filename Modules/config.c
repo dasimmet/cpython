@@ -60,6 +60,7 @@ extern PyObject* PyInit_unicodedata(void);
 extern PyObject* PyInit__contextvars(void);
 extern PyObject* PyInit__md5(void);
 extern PyObject* PyInit__sha1(void);
+extern PyObject* PyInit__sha3(void);
 extern PyObject* PyInit__sha256(void);
 extern PyObject* PyInit__blake2(void);
 
@@ -112,6 +113,7 @@ struct _inittab _PyImport_Inittab[] = {
     {"_contextvars", PyInit__contextvars},
     {"_md5", PyInit__md5},
     {"_sha1", PyInit__sha1},
+    {"_sha3", PyInit__sha3},
     {"_sha256", PyInit__sha256},
     {"_blake2", PyInit__blake2},
 
