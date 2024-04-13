@@ -58,6 +58,9 @@ extern PyObject* PyInit__posixsubprocess(void);
 extern PyObject* PyInit__ssl(void);
 extern PyObject* PyInit_unicodedata(void);
 extern PyObject* PyInit__contextvars(void);
+extern PyObject* PyInit__md5(void);
+extern PyObject* PyInit__sha1(void);
+extern PyObject* PyInit__sha256(void);
 
 /* -- ADDMODULE MARKER 1 -- */
 
@@ -106,6 +109,9 @@ struct _inittab _PyImport_Inittab[] = {
     {"_ssl", PyInit__ssl},
     {"unicodedata", PyInit_unicodedata},
     {"_contextvars", PyInit__contextvars},
+    {"_md5", PyInit__md5},
+    {"_sha1", PyInit__sha1},
+    {"_sha256", PyInit__sha256},
 
 /* -- ADDMODULE MARKER 2 -- */
 
