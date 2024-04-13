@@ -667,6 +667,11 @@ pub fn build(b: *std.Build) void {
         "Modules/md5module.c",
         "Modules/sha1module.c",
         "Modules/sha256module.c",
+
+        "Modules/_blake2/blake2module.c",
+        "Modules/_blake2/blake2b_impl.c",
+        "Modules/_blake2/blake2s_impl.c",
+
         "Modules/posixmodule.c",
         "Modules/pwdmodule.c",
         "Modules/selectmodule.c",
