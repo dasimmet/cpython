@@ -21,10 +21,12 @@
         "Lib",
         "Modules",
         "Objects",
+        "Parser",
         "Programs",
         "Python",
         "README.md",
         "build.zig",
         "build.zig.zon",
+        "pyconfig.h.in",
     },
 }
