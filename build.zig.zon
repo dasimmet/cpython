@@ -10,8 +10,8 @@
             .hash = "1220138f4aba0c01e66b68ed9e1e1e74614c06e4743d88bc58af4f1c3dd0aae5fea7",
         },
         .openssl = .{
-            .url = "https://github.com/allyourcodebase/openssl/archive/refs/tags/3.3.0.tar.gz",
-            .hash = "1220ab40c46a9eaca3b10d3b86ae9ee4ad366595da3b27bf2ce1b3b7189d4e5c61b6",
+            .url = "https://github.com/allyourcodebase/openssl/archive/refs/tags/3.3.1-1.tar.gz",
+            .hash = "12207c40cefa38fe90e4230dfba2e5c76b37e1ee36602512cad8ff0501f892002a65",
         },
     },
 
