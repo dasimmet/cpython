@@ -11,3 +11,15 @@ This builds a static executable, which can be then executed like this:
 PYTHONPATH=Lib zig-out/bin/cpython
 ```
 
+## Project Status
+
+My personal use case is to run the latest
+[ytdlp](https://github.com/yt-dlp/yt-dlp) releases. This package is capable of
+doing that, however, there may be missing features beyond what is required for
+this use case, such as missing C modules.
+
+I have tested on x86_64-linux-gnu and x86_64-linux-musl but not any other
+targets yet. Probably, other targets will need some work before they are
+additionally supported.
+
+Contributions to broaden the support status are welcome.
