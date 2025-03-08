@@ -5,7 +5,7 @@ pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{});
     const t = target.result;
 
-    const libz_dep = b.dependency("libz", .{
+    const zlib_dep = b.dependency("zlib", .{
         .target = target,
         .optimize = optimize,
     });
@@ -20,7 +20,7 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
-    exe.linkLibrary(libz_dep.artifact("z"));
+    exe.linkLibrary(zlib_dep.artifact("z"));
     exe.linkLibrary(openssl_dep.artifact("openssl"));
     exe.linkLibC();
 
