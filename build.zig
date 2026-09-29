@@ -274,7 +274,7 @@ fn addMakesetup(
         ._lsprof = true,
         ._multiprocessing = true,
         ._opcode = true,
-        ._pickle = true,
+        ._pickle = !(args.os_tag == .windows and version == .@"3.11.13"),
         ._queue = true,
         ._random = true,
         ._socket = (args.os_tag != .windows),
@@ -508,6 +508,12 @@ fn addPythonExe(
         "-std=c11",
         "-fvisibility=hidden",
         "-DVPATH=\"\"",
+        "-Wno-pointer-sign",
+        "-fms-extensions",
+        "-Wno-c23-extensions",
+        "-Wno-unused-value",
+        "-Wno-builtin-macro-redefined",
+        "-Wno-switch",
     };
 
     const frozen_extensions: ?std.Build.LazyPath = if (target.result.os.tag == .windows) blk: {
