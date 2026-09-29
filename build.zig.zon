@@ -12,6 +12,10 @@
         .@"upstream_3.12.11" = .{
             .url = "git+https://github.com/python/cpython#55fee9cf216abe4ec0d1139f94b1930fbd0c7644",
             .hash = "N-V-__8AAPXFFgaXQejAFSUHUzijh3iPdy1ps-UZiLaGwczp",
+        },
+        .@"upstream_3.12.13" = .{
+            .url = "git+https://github.com/python/cpython?ref=v3.12.13#3bb231a6a5dc02b95658877318bf61501a7209e9",
+            .hash = "N-V-__8AAAHDGgaW2HtB2Z2lj8jm4pvoWxy7xiNgJGhQr9Wk",
             .lazy = true,
         },
         .zlib = .{
