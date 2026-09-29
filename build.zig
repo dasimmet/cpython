@@ -862,10 +862,8 @@ fn addPyconfig(
         const run = b.addRunArtifact(configquery_exe);
         run.addArg("--zig-exe");
         run.addArg(b.graph.zig_exe);
-        if (b.cache_root.path) |cache_root| {
-            run.addArg("--cache-dir");
-            run.addArg(cache_root);
-        }
+        run.addArg("--cache-dir");
+        _ = run.addOutputDirectoryArg("cache");
         run.addArg("-target");
         run.addArg(try target.query.zigTriple(b.allocator));
         run.addArg("-mcpu");
