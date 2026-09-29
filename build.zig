@@ -74,8 +74,9 @@ pub fn build(b: *std.Build) !void {
     const optimize = b.standardOptimizeOption(.{});
 
     const ssl_enabled = b.option(bool, "ssl", "enable ssl") orelse switch (target.result.os.tag) {
-        .macos => false, // there's an issue building openssl on macos
-        else => true,
+        .macos => false,
+        .windows => false,
+        else => true, // there's an issue building openssl on macos and windows
     };
 
     const libs_host: Libs = .{ .zlib = null, .openssl = null };
@@ -453,6 +454,12 @@ fn addPythonExe(
     });
 
     exe.root_module.addCMacro("Py_BUILD_CORE", "");
+    if (target.result.os.tag == .windows) {
+        exe.root_module.addCMacro("Py_NO_ENABLE_SHARED", "");
+        exe.root_module.addCMacro("PY3_DLLNAME", "L\"python3.dll\"");
+        exe.subsystem = .Console;
+        exe.mingw_unicode_entry_point = true;
+    }
     exe.root_module.addCMacro("_GNU_SOURCE", "");
     switch (optimize) {
         .Debug => {},
@@ -503,12 +510,29 @@ fn addPythonExe(
         "-DVPATH=\"\"",
     };
 
+    const frozen_extensions: ?std.Build.LazyPath = if (target.result.os.tag == .windows) blk: {
+        const write_files = b.addWriteFiles();
+        break :blk write_files.add(
+            "frozen_extensions.c",
+            "#include \"Python.h\"\n\nint PyInitFrozenExtensions(void) {\n    return 0;\n}\n",
+        );
+    } else null;
+    const frozen_dllmain: ?std.Build.LazyPath = if (target.result.os.tag == .windows) blk: {
+        const write_files = b.addWriteFiles();
+        break :blk write_files.add(
+            "frozen_dllmain.c",
+            "void PyWinFreeze_ExeInit(void) {}\nvoid PyWinFreeze_ExeTerm(void) {}\nint PyHKEY_Type;\nvoid *PyWin_DLLhModule;\n",
+        );
+    } else null;
+
     {
         const AddModules = struct {
             step: std.Build.Step,
             upstream: *std.Build.Dependency,
             exe: *std.Build.Step.Compile,
             module_compile_args_file: std.Build.LazyPath,
+            target: std.Build.ResolvedTarget,
+            posix_wrapper: ?std.Build.LazyPath,
         };
         const add_modules_make = struct {
             fn make(step: *std.Build.Step, options: std.Build.Step.MakeOptions) anyerror!void {
@@ -522,13 +546,18 @@ fn addPythonExe(
 
                 var files: std.ArrayList([]const u8) = .empty;
                 defer files.deinit(step.owner.allocator);
+                var posix_module: ?[]const u8 = null;
 
                 var line_it = std.mem.splitScalar(u8, module_compile_args, '\n');
                 while (line_it.next()) |line| {
                     if (line.len == 0) continue;
                     if (std.mem.startsWith(u8, line, "# ")) continue;
                     if (std.mem.endsWith(u8, line, ".c")) {
-                        try files.append(step.owner.allocator, line);
+                        if (self.target.result.os.tag == .windows and std.mem.endsWith(u8, line, "posixmodule.c")) {
+                            posix_module = line;
+                        } else {
+                            try files.append(step.owner.allocator, line);
+                        }
                     } else if (std.mem.startsWith(u8, line, "-I")) {
                         const path = line[2..];
                         const prefix = "$(srcdir)/";
@@ -546,9 +575,25 @@ fn addPythonExe(
                     .files = files.items,
                     .flags = &flags_common,
                 });
+                if (posix_module) |file| {
+                    self.exe.root_module.addCSourceFile(.{
+                        .file = if (self.target.result.os.tag == .windows)
+                            self.posix_wrapper.?
+                        else
+                            self.upstream.path(file),
+                        .flags = &flags_common,
+                    });
+                }
             }
         }.make;
         const add_modules = b.allocator.create(AddModules) catch @panic("OOM");
+        const posix_wrapper: ?std.Build.LazyPath = if (target.result.os.tag == .windows) blk: {
+            const write_files = b.addWriteFiles();
+            break :blk write_files.add(
+                "posixmodule_win.c",
+                "#include \"Python.h\"\n\n#include <process.h>\n#undef environ\n#include \"Modules/posixmodule.c\"\n",
+            );
+        } else null;
         add_modules.* = .{
             .step = std.Build.Step.init(.{
                 .id = .custom,
@@ -559,8 +604,13 @@ fn addPythonExe(
             .upstream = upstream,
             .exe = exe,
             .module_compile_args_file = args.makesetup_out.path(b, "module-compile-args.txt"),
+            .target = target,
+            .posix_wrapper = posix_wrapper,
         };
         add_modules.module_compile_args_file.addStepDependencies(&add_modules.step);
+        if (posix_wrapper) |wrapper| wrapper.addStepDependencies(&add_modules.step);
+        if (frozen_extensions) |extensions| extensions.addStepDependencies(&add_modules.step);
+        if (frozen_dllmain) |dllmain| dllmain.addStepDependencies(&add_modules.step);
         exe.step.dependOn(&add_modules.step);
     }
 
@@ -640,6 +690,18 @@ fn addPythonExe(
             .file = upstream.path("Python/dynload_win.c"),
             .flags = &flags_common,
         });
+        exe.root_module.addCSourceFile(.{
+            .file = upstream.path("Modules/_io/winconsoleio.c"),
+            .flags = &flags_common,
+        });
+        exe.root_module.addCSourceFile(.{
+            .file = frozen_dllmain.?,
+            .flags = &flags_common,
+        });
+        if (frozen_extensions) |extensions| exe.root_module.addCSourceFile(.{
+            .file = extensions,
+            .flags = &flags_common,
+        });
     } else {
         exe.root_module.addCSourceFile(.{
             .file = upstream.path("Python/dynload_shlib.c"),
@@ -655,6 +717,8 @@ fn addPythonExe(
     if (target.result.os.tag == .windows) {
         exe.root_module.linkSystemLibrary("ws2_32", .{});
         exe.root_module.linkSystemLibrary("api-ms-win-core-path-l1-1-0", .{});
+        exe.root_module.linkSystemLibrary("bcrypt", .{});
+        exe.root_module.linkSystemLibrary("version", .{});
     }
 
     // TODO: do we need this
@@ -1147,8 +1211,8 @@ fn ci(
 ) !void {
     const CiTarget = struct { triple: []const u8, ssl: bool };
     const ci_targets = [_]CiTarget{
-        // .{ .triple = "x86_64-windows", .ssl = false },
-        // .{ .triple = "aarch64-windows", .ssl = true },
+        .{ .triple = "x86_64-windows", .ssl = false },
+        .{ .triple = "aarch64-windows", .ssl = false },
         // .{ .triple = "x86-windows", .ssl = true },
 
         .{ .triple = "x86_64-macos", .ssl = false },
