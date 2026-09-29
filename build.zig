@@ -387,6 +387,11 @@ fn addMakesetup(
     const generate = b.addRunArtifact(args.makesetup_exe);
     generate.addDirectoryArg(upstream.path("."));
     const makesetup_out = generate.addOutputDirectoryArg("gen");
+    if (is_posix) {
+        generate.addArg("--posix");
+    } else {
+        generate.addArg("--windows");
+    }
     generate.addFileArg(setup_bootstrap);
     generate.addFileArg(setup_stdlib);
     generate.addFileArg(upstream.path("Modules/Setup"));

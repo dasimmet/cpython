@@ -3,6 +3,10 @@ const Io = std.Io;
 const print = std.debug.print;
 const ArrayListUnmanaged = std.ArrayListUnmanaged;
 const Allocator = std.mem.Allocator;
+const OsTarget = enum {
+    posix,
+    windows,
+};
 
 pub fn main(init: std.process.Init) !void {
     const arena = init.arena.allocator();
@@ -19,9 +23,10 @@ pub fn main(init: std.process.Init) !void {
 
     const upstream_src = args[0];
     const out_path = args[1];
-    const setup_files = args[2..];
+    const ostarget: OsTarget = if (std.mem.eql(u8, args[2], "--windows")) .windows else .posix;
+    const setup_files = args[3..];
 
-    const setup = try parseSetupFiles(arena, io, setup_files);
+    const setup = try parseSetupFiles(arena, io, setup_files, ostarget);
 
     const config_in_path = std.Io.Dir.path.join(arena, &.{ upstream_src, "Modules", "config.c.in" }) catch |e| oom(e);
     const config_in = std.Io.Dir.cwd().readFileAlloc(io, config_in_path, arena, .unlimited) catch |e|
@@ -113,12 +118,17 @@ const Setup = struct {
     modules: std.StringArrayHashMapUnmanaged(Module) = .{},
 };
 
-fn parseSetupFiles(arena: std.mem.Allocator, io: Io, setup_files: []const []const u8) !Setup {
+fn parseSetupFiles(
+    arena: std.mem.Allocator,
+    io: Io,
+    setup_files: []const []const u8,
+    ostarget: OsTarget,
+) !Setup {
     var setup: Setup = .{};
     for (setup_files) |file_path| {
         const content = std.Io.Dir.cwd().readFileAlloc(io, file_path, arena, .unlimited) catch |e|
             std.debug.panic("open '{s}' failed with {t}", .{ file_path, e });
-        try parseSetupFile(arena, &setup, file_path, content);
+        try parseSetupFile(arena, &setup, file_path, content, ostarget);
     }
     return setup;
 }
@@ -128,6 +138,7 @@ fn parseSetupFile(
     setup: *Setup,
     file_path: []const u8,
     content: []const u8,
+    ostarget: OsTarget,
 ) !void {
     var kind: ?Kind = null;
     var block_enabled: bool = true;
@@ -162,7 +173,8 @@ fn parseSetupFile(
             // # identifier (letters, digits, underscores, beginning with non-digit)
             // #
             var parts = std.mem.tokenizeAny(u8, line, " ");
-            const name = parts.next() orelse continue;
+            const raw_name = parts.next() orelse continue;
+            const name = if (ostarget == .windows and std.mem.eql(u8, raw_name, "posix")) "nt" else raw_name;
 
             {
                 const valid_name = blk: {
