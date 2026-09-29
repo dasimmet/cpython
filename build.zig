@@ -1,3 +1,7 @@
+const std = @import("std");
+const Manifest = @import("Manifest.zig");
+const ConfigHeaderExt = @import("ConfigHeaderExt.zig");
+
 pub const Version = enum {
     @"3.11.13",
     @"3.12.11",
@@ -5,6 +9,13 @@ pub const Version = enum {
         return switch (self) {
             .@"3.11.13" => "3.11",
             .@"3.12.11" => "3.12",
+        };
+    }
+    pub fn manifest(self: Version) Manifest {
+        return switch (self) {
+            .@"3.11.13" => @import("module-sources-3.11.13.zon"),
+            .@"3.12.11" => @import("module-sources-3.12.11.zon"),
+            // else => .{},
         };
     }
 
@@ -78,7 +89,6 @@ pub fn build(b: *std.Build) !void {
         else => true,
     };
 
-    const libs_host: Libs = .{ .zlib = null, .openssl = null };
     const libs_target: Libs = .{
         .zlib = (b.dependency("zlib", .{
             .target = target,
@@ -90,16 +100,58 @@ pub fn build(b: *std.Build) !void {
         })) |dep| dep.artifact("openssl") else null) else null,
     };
 
-    const makesetup_host = addMakesetup(b, version, upstream, libs_host, .{
+    const makesetup_host = addMakesetup(b, version, upstream, .{ .zlib = false, .openssl = false }, .{
         .os_tag = b.graph.host.result.os.tag,
         .replace_exe = replace_exe,
         .makesetup_exe = makesetup_exe,
     });
-    const makesetup_target = addMakesetup(b, version, upstream, libs_target, .{
+    const makesetup_target = addMakesetup(b, version, upstream, .{
+        .zlib = libs_target.zlib != null,
+        .openssl = libs_target.openssl != null,
+    }, .{
         .os_tag = target.result.os.tag,
         .replace_exe = replace_exe,
         .makesetup_exe = makesetup_exe,
     });
+
+    {
+        const update_module_sources_exe = b.addExecutable(.{
+            .name = "update-module-sources",
+            .root_module = b.createModule(.{
+                .root_source_file = b.path("update-module-sources.zig"),
+                .target = b.graph.host,
+            }),
+        });
+        const update_module_sources = b.addRunArtifact(update_module_sources_exe);
+        const source_os_tags = [_]std.Target.Os.Tag{ .linux, .macos, .windows };
+        const source_configs = [_]struct { zlib: bool, openssl: bool, name: []const u8 }{
+            .{ .zlib = false, .openssl = false, .name = "none" },
+            .{ .zlib = true, .openssl = false, .name = "zlib" },
+            .{ .zlib = false, .openssl = true, .name = "openssl" },
+            .{ .zlib = true, .openssl = true, .name = "zlib_openssl" },
+        };
+        for (source_os_tags) |os_tag| {
+            for (source_configs) |source_config| {
+                const module_setup = addMakesetup(b, version, upstream, .{
+                    .zlib = source_config.zlib,
+                    .openssl = source_config.openssl,
+                }, .{
+                    .os_tag = os_tag,
+                    .replace_exe = replace_exe,
+                    .makesetup_exe = makesetup_exe,
+                });
+                update_module_sources.addArg(@tagName(os_tag));
+                update_module_sources.addArg(source_config.name);
+                update_module_sources.addFileArg(module_setup.path(b, "module-compile-args.txt"));
+            }
+        }
+        update_module_sources.addArg("--");
+        const module_sources_output = update_module_sources.addOutputFileArg("module-sources.zon");
+        const update_src = b.addUpdateSourceFiles();
+        update_src.addCopyFileToSource(module_sources_output, b.fmt("module-sources-{s}.zon", .{@tagName(version)}));
+        b.step("update-src", "Regenerate module source manifests").dependOn(&update_src.step);
+    }
+
     const pyconfig_host = try addPyconfig(b, version, upstream, b.graph.host, .{ .zlib = null, .openssl = null }, configquery_exe);
 
     const freeze_module_exe = addPythonExe(b, upstream, b.graph.host, .Debug, .{
@@ -168,8 +220,6 @@ pub fn build(b: *std.Build) !void {
         run.addArg("-o");
         const deepfreeze_c = run.addOutputFileArg("deepfreeze.c");
         {
-            // Need to create a custom step because std.Build.Step.Run doesn't
-            // have addSuffixedOutputArg.
             const AddModules = struct {
                 step: std.Build.Step,
                 version: Version,
@@ -248,7 +298,7 @@ fn addMakesetup(
     b: *std.Build,
     version: Version,
     upstream: *std.Build.Dependency,
-    libs: Libs,
+    module_flags: struct { zlib: bool, openssl: bool },
     args: struct {
         os_tag: std.Target.Os.Tag,
         replace_exe: *std.Build.Step.Compile,
@@ -258,8 +308,8 @@ fn addMakesetup(
     const is_posix = (args.os_tag != .windows);
 
     const stdlib_modules_common = .{
-        ._ssl = (libs.openssl != null),
-        .zlib = (libs.zlib != null),
+        ._ssl = module_flags.openssl,
+        .zlib = module_flags.zlib,
 
         // Modules that should always be present (POSIX and Windows):
         ._asyncio = true,
@@ -498,66 +548,19 @@ fn addPythonExe(
         "-DVPATH=\"\"",
     };
 
-    {
-        const AddModules = struct {
-            step: std.Build.Step,
-            upstream: *std.Build.Dependency,
-            exe: *std.Build.Step.Compile,
-            module_compile_args_file: std.Build.LazyPath,
-        };
-        const add_modules_make = struct {
-            fn make(step: *std.Build.Step, options: std.Build.Step.MakeOptions) anyerror!void {
-                _ = options;
-                const io = step.owner.graph.io;
-                const self: *AddModules = @fieldParentPtr("step", step);
-                const file_path = self.module_compile_args_file.getPath2(step.owner, step);
-
-                const module_compile_args = try std.Io.Dir.cwd().readFileAlloc(io, file_path, step.owner.allocator, .unlimited);
-                defer step.owner.allocator.free(module_compile_args);
-
-                var files: std.ArrayList([]const u8) = .empty;
-                defer files.deinit(step.owner.allocator);
-
-                var line_it = std.mem.splitScalar(u8, module_compile_args, '\n');
-                while (line_it.next()) |line| {
-                    if (line.len == 0) continue;
-                    if (std.mem.startsWith(u8, line, "# ")) continue;
-                    if (std.mem.endsWith(u8, line, ".c")) {
-                        try files.append(step.owner.allocator, line);
-                    } else if (std.mem.startsWith(u8, line, "-I")) {
-                        const path = line[2..];
-                        const prefix = "$(srcdir)/";
-                        if (!std.mem.startsWith(u8, path, prefix)) std.debug.panic(
-                            "expected include path to start with '-I{s}' but got: '{s}'",
-                            .{ prefix, line },
-                        );
-                        const inc_sub_path = step.owner.dupe(path[prefix.len..]);
-                        self.exe.root_module.addIncludePath(self.upstream.path(inc_sub_path));
-                    } else std.debug.panic("todo: parse module-compile-args line '{s}'", .{line});
-                }
-
-                self.exe.root_module.addCSourceFiles(.{
-                    .root = self.upstream.path("."),
-                    .files = files.items,
-                    .flags = &flags_common,
-                });
-            }
-        }.make;
-        const add_modules = b.allocator.create(AddModules) catch @panic("OOM");
-        add_modules.* = .{
-            .step = std.Build.Step.init(.{
-                .id = .custom,
-                .name = b.fmt("add module sources/includes to {s} exe", .{exe.name}),
-                .owner = b,
-                .makeFn = &add_modules_make,
-            }),
-            .upstream = upstream,
-            .exe = exe,
-            .module_compile_args_file = args.makesetup_out.path(b, "module-compile-args.txt"),
-        };
-        add_modules.module_compile_args_file.addStepDependencies(&add_modules.step);
-        exe.step.dependOn(&add_modules.step);
-    }
+    const module_sources = selectModuleSources(
+        args.pyconfig.version.manifest(),
+        b.allocator,
+        target.result.os.tag,
+        args.pyconfig.libs.zlib != null,
+        args.pyconfig.libs.openssl != null,
+    );
+    for (module_sources.include_dirs) |include_dir| exe.root_module.addIncludePath(upstream.path(include_dir));
+    exe.root_module.addCSourceFiles(.{
+        .root = upstream.path("."),
+        .files = module_sources.files,
+        .flags = &flags_common,
+    });
 
     exe.root_module.addCSourceFiles(.{
         .root = upstream.path("."),
@@ -1059,6 +1062,133 @@ const library_src_omit_frozen = struct {
     pub const @"3.12.11" = parser_src ++ object_src.@"3.12.11" ++ python_src.@"3.12.11" ++ module_src;
 };
 
+fn ci(
+    b: *std.Build,
+    version: Version,
+    ssl_enabled: bool,
+    upstream: *std.Build.Dependency,
+    ci_step: *std.Build.Step,
+    args: struct {
+        replace_exe: *std.Build.Step.Compile,
+        makesetup_exe: *std.Build.Step.Compile,
+        configquery_exe: *std.Build.Step.Compile,
+        stage2_frozen_mods: Stage2FrozenMods,
+        frozen_headers: []const std.Build.LazyPath,
+        deepfreeze_c: std.Build.LazyPath,
+    },
+) !void {
+    const CiTarget = struct { triple: []const u8, ssl: bool };
+    const ci_targets = [_]CiTarget{
+        // .{ .triple = "x86_64-windows", .ssl = false },
+        // .{ .triple = "aarch64-windows", .ssl = true },
+        // .{ .triple = "x86-windows", .ssl = true },
+
+        .{ .triple = "x86_64-macos", .ssl = false },
+        .{ .triple = "aarch64-macos", .ssl = false },
+
+        .{ .triple = "x86_64-linux-musl", .ssl = true },
+        .{ .triple = "x86_64-linux-gnu", .ssl = true },
+        .{ .triple = "aarch64-linux-musl", .ssl = false },
+        .{ .triple = "aarch64-linux-gnu", .ssl = false },
+        // .{ .triple = "arm-linux-musl", .ssl = true }, // zlib doesn't build
+        .{ .triple = "riscv64-linux-musl", .ssl = false },
+        .{ .triple = "powerpc64le-linux-musl", .ssl = false },
+        // .{ .triple = "x86-linux-musl", .ssl = false },
+        // .{ .triple = "x86-linux-gnu", .ssl = false },
+        .{ .triple = "s390x-linux-musl", .ssl = false },
+    };
+
+    for (ci_targets) |ci_target| {
+        const target = b.resolveTargetQuery(try std.Target.Query.parse(
+            .{ .arch_os_abi = ci_target.triple },
+        ));
+        const optimize: std.builtin.OptimizeMode = .ReleaseFast;
+        const target_dest_dir: std.Build.InstallDir = .{ .custom = ci_target.triple };
+        const install = b.step(b.fmt("install-{s}", .{ci_target.triple}), "");
+        ci_step.dependOn(install);
+
+        const libs: Libs = .{
+            .zlib = (b.dependency("zlib", .{
+                .target = target,
+                .optimize = optimize,
+            })).artifact("z"),
+            .openssl = if (ssl_enabled and ci_target.ssl) (if (b.lazyDependency("openssl", .{
+                .target = target,
+                .optimize = optimize,
+            })) |dep| dep.artifact("openssl") else null) else null,
+        };
+        const makesetup = addMakesetup(b, version, upstream, .{
+            .zlib = libs.zlib != null,
+            .openssl = libs.openssl != null,
+        }, .{
+            .os_tag = target.result.os.tag,
+            .replace_exe = args.replace_exe,
+            .makesetup_exe = args.makesetup_exe,
+        });
+        const exe = addPythonExe(b, upstream, target, optimize, .{
+            .name = "python",
+            .makesetup_out = makesetup,
+            .pyconfig = try addPyconfig(b, version, upstream, target, libs, args.configquery_exe),
+            .stage = .{ .final = .{
+                .stage2 = args.stage2_frozen_mods,
+                .frozen_headers = args.frozen_headers,
+                .deepfreeze_c = args.deepfreeze_c,
+            } },
+        });
+
+        install.dependOn(
+            &b.addInstallArtifact(exe, .{ .dest_dir = .{ .override = target_dest_dir } }).step,
+        );
+    }
+}
+
+fn concat(allocator: std.mem.Allocator, lists: []const []const []const u8) []const []const u8 {
+    var total: usize = 0;
+    for (lists) |list| {
+        total += list.len;
+    }
+    const result = allocator.alloc([]const u8, total) catch @panic("OOM");
+    var index: usize = 0;
+    for (lists) |list| {
+        for (list) |s| {
+            result[index] = s;
+            index += 1;
+        }
+    }
+    std.debug.assert(index == total);
+    return result;
+}
+
+const ModuleSourceList = struct { files: []const []const u8, include_dirs: []const []const u8 };
+
+fn selectModuleSources(manifests: Manifest, allocator: std.mem.Allocator, os_tag: std.Target.Os.Tag, zlib: bool, openssl: bool) ModuleSourceList {
+    const os_configs = switch (os_tag) {
+        .linux => manifests.linux,
+        .macos => manifests.macos,
+        .windows => manifests.windows,
+        else => @panic("unsupported OS for module sources"),
+    } orelse return .{ .files = &.{}, .include_dirs = &.{} };
+    const config = if (openssl)
+        (if (zlib) os_configs.zlib_openssl else os_configs.openssl)
+    else
+        (if (zlib) os_configs.zlib else os_configs.none);
+    const selected = config orelse Manifest.LibSet{};
+    const source_files = manifests.source_files orelse &.{};
+    const source_file_indices = selected.source_file_indices orelse &.{};
+    const files = allocator.alloc([]const u8, source_file_indices.len) catch @panic("OOM");
+    for (source_file_indices, files) |index, *path| {
+        if (index >= source_files.len) @panic("module manifest source index is out of bounds");
+        path.* = source_files[index];
+    }
+    return .{
+        .files = files,
+        .include_dirs = concat(allocator, &.{
+            normalizeStrings(allocator, manifests.common_include_dirs orelse &.{}),
+            normalizeStrings(allocator, selected.include_dirs orelse &.{}),
+        }),
+    };
+}
+
 const frozen_modules = [_][]const u8{
     "Lib/importlib/_bootstrap.py",
     "Lib/importlib/_bootstrap_external.py",
@@ -1127,99 +1257,8 @@ const frozen_module_name_sets = struct {
     }
 };
 
-fn ci(
-    b: *std.Build,
-    version: Version,
-    ssl_enabled: bool,
-    upstream: *std.Build.Dependency,
-    ci_step: *std.Build.Step,
-    args: struct {
-        replace_exe: *std.Build.Step.Compile,
-        makesetup_exe: *std.Build.Step.Compile,
-        configquery_exe: *std.Build.Step.Compile,
-        stage2_frozen_mods: Stage2FrozenMods,
-        frozen_headers: []const std.Build.LazyPath,
-        deepfreeze_c: std.Build.LazyPath,
-    },
-) !void {
-    const CiTarget = struct { triple: []const u8, ssl: bool };
-    const ci_targets = [_]CiTarget{
-        // .{ .triple = "x86_64-windows", .ssl = false },
-        // .{ .triple = "aarch64-windows", .ssl = true },
-        // .{ .triple = "x86-windows", .ssl = true },
-
-        .{ .triple = "x86_64-macos", .ssl = false },
-        .{ .triple = "aarch64-macos", .ssl = false },
-
-        .{ .triple = "x86_64-linux-musl", .ssl = true },
-        .{ .triple = "x86_64-linux-gnu", .ssl = true },
-        .{ .triple = "aarch64-linux-musl", .ssl = false },
-        .{ .triple = "aarch64-linux-gnu", .ssl = false },
-        // .{ .triple = "arm-linux-musl", .ssl = true }, // zlib doesn't build
-        .{ .triple = "riscv64-linux-musl", .ssl = false },
-        .{ .triple = "powerpc64le-linux-musl", .ssl = false },
-        // .{ .triple = "x86-linux-musl", .ssl = false },
-        // .{ .triple = "x86-linux-gnu", .ssl = false },
-        .{ .triple = "s390x-linux-musl", .ssl = false },
-    };
-
-    for (ci_targets) |ci_target| {
-        const target = b.resolveTargetQuery(try std.Target.Query.parse(
-            .{ .arch_os_abi = ci_target.triple },
-        ));
-        const optimize: std.builtin.OptimizeMode = .ReleaseFast;
-        const target_dest_dir: std.Build.InstallDir = .{ .custom = ci_target.triple };
-        const install = b.step(b.fmt("install-{s}", .{ci_target.triple}), "");
-        ci_step.dependOn(install);
-
-        const libs: Libs = .{
-            .zlib = (b.dependency("zlib", .{
-                .target = target,
-                .optimize = optimize,
-            })).artifact("z"),
-            .openssl = if (ssl_enabled and ci_target.ssl) (if (b.lazyDependency("openssl", .{
-                .target = target,
-                .optimize = optimize,
-            })) |dep| dep.artifact("openssl") else null) else null,
-        };
-        const makesetup = addMakesetup(b, version, upstream, libs, .{
-            .os_tag = target.result.os.tag,
-            .replace_exe = args.replace_exe,
-            .makesetup_exe = args.makesetup_exe,
-        });
-        const exe = addPythonExe(b, upstream, target, optimize, .{
-            .name = "python",
-            .makesetup_out = makesetup,
-            .pyconfig = try addPyconfig(b, version, upstream, target, libs, args.configquery_exe),
-            .stage = .{ .final = .{
-                .stage2 = args.stage2_frozen_mods,
-                .frozen_headers = args.frozen_headers,
-                .deepfreeze_c = args.deepfreeze_c,
-            } },
-        });
-
-        install.dependOn(
-            &b.addInstallArtifact(exe, .{ .dest_dir = .{ .override = target_dest_dir } }).step,
-        );
-    }
+fn normalizeStrings(allocator: std.mem.Allocator, strings: []const []const u8) []const []const u8 {
+    const normalized = allocator.alloc([]const u8, strings.len) catch @panic("OOM");
+    @memcpy(normalized, strings);
+    return normalized;
 }
-
-fn concat(allocator: std.mem.Allocator, lists: []const []const []const u8) []const []const u8 {
-    var total: usize = 0;
-    for (lists) |list| {
-        total += list.len;
-    }
-    const result = allocator.alloc([]const u8, total) catch @panic("OOM");
-    var index: usize = 0;
-    for (lists) |list| {
-        for (list) |s| {
-            result[index] = s;
-            index += 1;
-        }
-    }
-    std.debug.assert(index == total);
-    return result;
-}
-
-const std = @import("std");
-const ConfigHeaderExt = @import("ConfigHeaderExt.zig");

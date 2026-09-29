@@ -31,6 +31,9 @@
         "makesetup.zig",
         "replace.zig",
         "ConfigHeaderExt.zig",
+        "Manifest.zig",
+        "update-module-sources.zig",
+        "module-sources-*.zon",
         "config-*",
     },
 }
