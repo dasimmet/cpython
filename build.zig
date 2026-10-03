@@ -113,57 +113,12 @@ pub fn build(b: *std.Build) !void {
         .makesetup_exe = makesetup_exe,
     });
 
-    {
-        const update_module_sources_exe = b.addExecutable(.{
-            .name = "update-module-sources",
-            .root_module = b.createModule(.{
-                .root_source_file = b.path("update-module-sources.zig"),
-                .target = b.graph.host,
-            }),
-        });
-        const update_module_sources = b.addRunArtifact(update_module_sources_exe);
-        const source_os_tags = [_]std.Target.Os.Tag{ .linux, .macos, .windows };
-        for (source_os_tags) |os_tag| {
-            const module_setup = addMakesetup(b, version, upstream, .{
-                .zlib = false,
-                .openssl = false,
-            }, .{
-                .os_tag = os_tag,
-                .replace_exe = replace_exe,
-                .makesetup_exe = makesetup_exe,
-            });
-            update_module_sources.addArg("--os");
-            update_module_sources.addArg(@tagName(os_tag));
-            update_module_sources.addFileArg(module_setup.path(b, "module-compile-args.txt"));
-        }
-        const source_libs = [_]struct {
-            name: []const u8,
-            zlib: bool,
-            openssl: bool,
-        }{
-            .{ .name = "openssl", .zlib = false, .openssl = true },
-            .{ .name = "zlib", .zlib = true, .openssl = false },
-        };
-        for (source_libs) |source_lib| {
-            const module_setup = addMakesetup(b, version, upstream, .{
-                .zlib = source_lib.zlib,
-                .openssl = source_lib.openssl,
-            }, .{
-                .os_tag = .linux,
-                .replace_exe = replace_exe,
-                .makesetup_exe = makesetup_exe,
-            });
-            update_module_sources.addArg("--lib");
-            update_module_sources.addArg(source_lib.name);
-            update_module_sources.addArg("linux");
-            update_module_sources.addFileArg(module_setup.path(b, "module-compile-args.txt"));
-        }
-        update_module_sources.addArg("--");
-        const module_sources_output = update_module_sources.addOutputFileArg("module-sources.zon");
-        const update_src = b.addUpdateSourceFiles();
-        update_src.addCopyFileToSource(module_sources_output, b.fmt("module-sources-{s}.zon", .{@tagName(version)}));
-        b.step("update-src", "Regenerate module source manifests").dependOn(&update_src.step);
-    }
+    UpdateSrcStep.add(b, .{
+        .version = version,
+        .upstream = upstream,
+        .replace_exe = replace_exe,
+        .makesetup_exe = makesetup_exe,
+    });
 
     const pyconfig_host = try addPyconfig(b, version, upstream, b.graph.host, .{ .zlib = null, .openssl = null }, configquery_exe);
 
@@ -300,6 +255,66 @@ pub fn build(b: *std.Build) !void {
         .deepfreeze_c = deepfreeze_c,
     });
 }
+
+pub const UpdateSrcStep = struct {
+    pub const Options = struct {
+        version: Version,
+        upstream: *std.Build.Dependency,
+        replace_exe: *std.Build.Step.Compile,
+        makesetup_exe: *std.Build.Step.Compile,
+    };
+    fn add(b: *std.Build, options: Options) void {
+        const update_module_sources_exe = b.addExecutable(.{
+            .name = "update-module-sources",
+            .root_module = b.createModule(.{
+                .root_source_file = b.path("update-module-sources.zig"),
+                .target = b.graph.host,
+            }),
+        });
+        const update_module_sources = b.addRunArtifact(update_module_sources_exe);
+        const source_os_tags = [_]std.Target.Os.Tag{ .linux, .macos, .windows };
+        for (source_os_tags) |os_tag| {
+            const module_setup = addMakesetup(b, options.version, options.upstream, .{
+                .zlib = false,
+                .openssl = false,
+            }, .{
+                .os_tag = os_tag,
+                .replace_exe = options.replace_exe,
+                .makesetup_exe = options.makesetup_exe,
+            });
+            update_module_sources.addArg("--os");
+            update_module_sources.addArg(@tagName(os_tag));
+            update_module_sources.addFileArg(module_setup.path(b, "module-compile-args.txt"));
+        }
+        const source_libs = [_]struct {
+            name: []const u8,
+            zlib: bool,
+            openssl: bool,
+        }{
+            .{ .name = "openssl", .zlib = false, .openssl = true },
+            .{ .name = "zlib", .zlib = true, .openssl = false },
+        };
+        for (source_libs) |source_lib| {
+            const module_setup = addMakesetup(b, options.version, options.upstream, .{
+                .zlib = source_lib.zlib,
+                .openssl = source_lib.openssl,
+            }, .{
+                .os_tag = .linux,
+                .replace_exe = options.replace_exe,
+                .makesetup_exe = options.makesetup_exe,
+            });
+            update_module_sources.addArg("--lib");
+            update_module_sources.addArg(source_lib.name);
+            update_module_sources.addArg("linux");
+            update_module_sources.addFileArg(module_setup.path(b, "module-compile-args.txt"));
+        }
+        update_module_sources.addArg("--");
+        const module_sources_output = update_module_sources.addOutputFileArg("module-sources.zon");
+        const update_src = b.addUpdateSourceFiles();
+        update_src.addCopyFileToSource(module_sources_output, b.fmt("module-sources-{s}.zon", .{@tagName(options.version)}));
+        b.step("update-src", "Regenerate module source manifests").dependOn(&update_src.step);
+    }
+};
 
 fn noUpstream(b: *std.Build) *std.Build.Dependency {
     const dependency = b.allocator.create(std.Build.Dependency) catch @panic("OOM");
