@@ -18,7 +18,6 @@ pub const Version = enum {
             .@"3.11.13" => @import("module-sources-3.11.13.zon"),
             .@"3.12.11" => @import("module-sources-3.12.11.zon"),
             .@"3.12.13" => @import("module-sources-3.12.13.zon"),
-            // else => .{},
         };
     }
 
@@ -124,26 +123,40 @@ pub fn build(b: *std.Build) !void {
         });
         const update_module_sources = b.addRunArtifact(update_module_sources_exe);
         const source_os_tags = [_]std.Target.Os.Tag{ .linux, .macos, .windows };
-        const source_configs = [_]struct { zlib: bool, openssl: bool, name: []const u8 }{
-            .{ .zlib = false, .openssl = false, .name = "none" },
-            .{ .zlib = true, .openssl = false, .name = "zlib" },
-            .{ .zlib = false, .openssl = true, .name = "openssl" },
-            .{ .zlib = true, .openssl = true, .name = "zlib_openssl" },
-        };
         for (source_os_tags) |os_tag| {
-            for (source_configs) |source_config| {
-                const module_setup = addMakesetup(b, version, upstream, .{
-                    .zlib = source_config.zlib,
-                    .openssl = source_config.openssl,
-                }, .{
-                    .os_tag = os_tag,
-                    .replace_exe = replace_exe,
-                    .makesetup_exe = makesetup_exe,
-                });
-                update_module_sources.addArg(@tagName(os_tag));
-                update_module_sources.addArg(source_config.name);
-                update_module_sources.addFileArg(module_setup.path(b, "module-compile-args.txt"));
-            }
+            const module_setup = addMakesetup(b, version, upstream, .{
+                .zlib = false,
+                .openssl = false,
+            }, .{
+                .os_tag = os_tag,
+                .replace_exe = replace_exe,
+                .makesetup_exe = makesetup_exe,
+            });
+            update_module_sources.addArg("--os");
+            update_module_sources.addArg(@tagName(os_tag));
+            update_module_sources.addFileArg(module_setup.path(b, "module-compile-args.txt"));
+        }
+        const source_libs = [_]struct {
+            name: []const u8,
+            zlib: bool,
+            openssl: bool,
+        }{
+            .{ .name = "openssl", .zlib = false, .openssl = true },
+            .{ .name = "zlib", .zlib = true, .openssl = false },
+        };
+        for (source_libs) |source_lib| {
+            const module_setup = addMakesetup(b, version, upstream, .{
+                .zlib = source_lib.zlib,
+                .openssl = source_lib.openssl,
+            }, .{
+                .os_tag = .linux,
+                .replace_exe = replace_exe,
+                .makesetup_exe = makesetup_exe,
+            });
+            update_module_sources.addArg("--lib");
+            update_module_sources.addArg(source_lib.name);
+            update_module_sources.addArg("linux");
+            update_module_sources.addFileArg(module_setup.path(b, "module-compile-args.txt"));
         }
         update_module_sources.addArg("--");
         const module_sources_output = update_module_sources.addOutputFileArg("module-sources.zon");
@@ -1187,31 +1200,46 @@ fn concat(allocator: std.mem.Allocator, lists: []const []const []const u8) []con
 
 const ModuleSourceList = struct { files: []const []const u8, include_dirs: []const []const u8 };
 
-fn selectModuleSources(manifests: Manifest, allocator: std.mem.Allocator, os_tag: std.Target.Os.Tag, zlib: bool, openssl: bool) ModuleSourceList {
-    const os_configs = switch (os_tag) {
-        .linux => manifests.linux,
-        .macos => manifests.macos,
-        .windows => manifests.windows,
+fn selectModuleSources(manifest: Manifest, allocator: std.mem.Allocator, os_tag: std.Target.Os.Tag, zlib: bool, openssl: bool) ModuleSourceList {
+    const os_indices = if (manifest.os) |os| switch (os_tag) {
+        .linux => os.linux,
+        .macos => os.macos,
+        .windows => os.windows,
         else => @panic("unsupported OS for module sources"),
-    } orelse return .{ .files = &.{}, .include_dirs = &.{} };
-    const config = if (openssl)
-        (if (zlib) os_configs.zlib_openssl else os_configs.openssl)
-    else
-        (if (zlib) os_configs.zlib else os_configs.none);
-    const selected = config orelse Manifest.LibSet{};
-    const source_files = manifests.source_files orelse &.{};
-    const source_file_indices = selected.source_file_indices orelse &.{};
-    const files = allocator.alloc([]const u8, source_file_indices.len) catch @panic("OOM");
-    for (source_file_indices, files) |index, *path| {
+    } orelse &.{} else &.{};
+    const common_indices = manifest.common orelse &.{};
+    const openssl_indices = if (openssl) (if (manifest.libs) |l| l.openssl orelse &.{} else &.{}) else &.{};
+    const zlib_indices = if (zlib) (if (manifest.libs) |l| l.zlib orelse &.{} else &.{}) else &.{};
+
+    const total_indices = common_indices.len + os_indices.len + openssl_indices.len + zlib_indices.len;
+    const source_files = manifest.source_files orelse &.{};
+    var files = std.ArrayList([]const u8).initCapacity(
+        allocator,
+        total_indices,
+    ) catch @panic("OOM");
+    for (common_indices) |index| {
         if (index >= source_files.len) @panic("module manifest source index is out of bounds");
-        path.* = source_files[index];
+        files.append(allocator, source_files[index]) catch @panic("OOM");
+    }
+    for (os_indices) |index| {
+        if (index >= source_files.len) @panic("module manifest source index is out of bounds");
+        files.append(allocator, source_files[index]) catch @panic("OOM");
+    }
+    if (openssl) {
+        for (openssl_indices) |index| {
+            if (index >= source_files.len) @panic("module manifest source index is out of bounds");
+            files.append(allocator, source_files[index]) catch @panic("OOM");
+        }
+    }
+    if (zlib) {
+        for (zlib_indices) |index| {
+            if (index >= source_files.len) @panic("module manifest source index is out of bounds");
+            files.append(allocator, source_files[index]) catch @panic("OOM");
+        }
     }
     return .{
-        .files = files,
-        .include_dirs = concat(allocator, &.{
-            normalizeStrings(allocator, manifests.common_include_dirs orelse &.{}),
-            normalizeStrings(allocator, selected.include_dirs orelse &.{}),
-        }),
+        .files = files.toOwnedSlice(allocator) catch @panic("OOM"),
+        .include_dirs = manifest.common_include_dirs orelse &.{},
     };
 }
 
@@ -1282,9 +1310,3 @@ const frozen_module_name_sets = struct {
         return names;
     }
 };
-
-fn normalizeStrings(allocator: std.mem.Allocator, strings: []const []const u8) []const []const u8 {
-    const normalized = allocator.alloc([]const u8, strings.len) catch @panic("OOM");
-    @memcpy(normalized, strings);
-    return normalized;
-}

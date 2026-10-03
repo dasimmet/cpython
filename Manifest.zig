@@ -2,18 +2,17 @@ const Manifest = @This();
 
 source_files: ?[]const []const u8 = null,
 common_include_dirs: ?[]const []const u8 = null,
-linux: ?Os = null,
-macos: ?Os = null,
-windows: ?Os = null,
+common: ?[]const u32 = null,
+os: ?Os = null,
+libs: ?Libs = null,
 
 pub const Os = struct {
-    none: ?LibSet = null,
-    zlib: ?LibSet = null,
-    openssl: ?LibSet = null,
-    zlib_openssl: ?LibSet = null,
+    linux: ?[]const u32 = null,
+    macos: ?[]const u32 = null,
+    windows: ?[]const u32 = null,
 };
 
-pub const LibSet = struct {
-    source_file_indices: ?[]const u32 = null,
-    include_dirs: ?[]const []const u8 = null,
+pub const Libs = struct {
+    openssl: ?[]const u32 = null,
+    zlib: ?[]const u32 = null,
 };
