@@ -11,6 +11,14 @@ pub const Version = enum {
             .@"3.12.11" => "3.12",
         };
     }
+
+    pub fn release_date(self: Version) []const u8 {
+        return switch (self) {
+            .@"3.11.13" => "June 3, 2025",
+            .@"3.12.11" => "June 3, 2025",
+        };
+    }
+
     pub fn manifest(self: Version) Manifest {
         return switch (self) {
             .@"3.11.13" => @import("module-sources-3.11.13.zon"),
@@ -531,10 +539,7 @@ fn addPythonExe(
     switch (optimize) {
         .Debug => {},
         .ReleaseSafe, .ReleaseSmall, .ReleaseFast => {
-            const release_date = switch (args.pyconfig.version) {
-                .@"3.11.13" => "June 3, 2025",
-                .@"3.12.11" => "June 3, 2025",
-            };
+            const release_date = args.pyconfig.version.release_date();
             // need to redefine __DATE__ and __TIME__ for a reproducible build
             exe.root_module.addCMacro("__DATE__", b.fmt("\"{s}\"", .{release_date}));
             exe.root_module.addCMacro("__TIME__", "\"00:00:00\"");
@@ -577,8 +582,7 @@ fn addPythonExe(
         "-DVPATH=\"\"",
     };
 
-    const module_sources = selectModuleSources(
-        args.pyconfig.version.manifest(),
+    const module_sources = args.pyconfig.version.manifest().selectModuleSources(
         b.allocator,
         target.result.os.tag,
         args.pyconfig.libs.zlib != null,
@@ -1188,51 +1192,6 @@ fn concat(allocator: std.mem.Allocator, lists: []const []const []const u8) []con
     return result;
 }
 
-const ModuleSourceList = struct { files: []const []const u8, include_dirs: []const []const u8 };
-
-fn selectModuleSources(manifest: Manifest, allocator: std.mem.Allocator, os_tag: std.Target.Os.Tag, zlib: bool, openssl: bool) ModuleSourceList {
-    const os_indices = if (manifest.os) |os| switch (os_tag) {
-        .linux => os.linux,
-        .macos => os.macos,
-        .windows => os.windows,
-        else => @panic("unsupported OS for module sources"),
-    } orelse &.{} else &.{};
-    const common_indices = manifest.common orelse &.{};
-    const openssl_indices = if (openssl) (if (manifest.libs) |l| l.openssl orelse &.{} else &.{}) else &.{};
-    const zlib_indices = if (zlib) (if (manifest.libs) |l| l.zlib orelse &.{} else &.{}) else &.{};
-
-    const total_indices = common_indices.len + os_indices.len + openssl_indices.len + zlib_indices.len;
-    const source_files = manifest.source_files orelse &.{};
-    var files = std.ArrayList([]const u8).initCapacity(
-        allocator,
-        total_indices,
-    ) catch @panic("OOM");
-    for (common_indices) |index| {
-        if (index >= source_files.len) @panic("module manifest source index is out of bounds");
-        files.append(allocator, source_files[index]) catch @panic("OOM");
-    }
-    for (os_indices) |index| {
-        if (index >= source_files.len) @panic("module manifest source index is out of bounds");
-        files.append(allocator, source_files[index]) catch @panic("OOM");
-    }
-    if (openssl) {
-        for (openssl_indices) |index| {
-            if (index >= source_files.len) @panic("module manifest source index is out of bounds");
-            files.append(allocator, source_files[index]) catch @panic("OOM");
-        }
-    }
-    if (zlib) {
-        for (zlib_indices) |index| {
-            if (index >= source_files.len) @panic("module manifest source index is out of bounds");
-            files.append(allocator, source_files[index]) catch @panic("OOM");
-        }
-    }
-    return .{
-        .files = files.toOwnedSlice(allocator) catch @panic("OOM"),
-        .include_dirs = manifest.common_include_dirs orelse &.{},
-    };
-}
-
 const frozen_modules = [_][]const u8{
     "Lib/importlib/_bootstrap.py",
     "Lib/importlib/_bootstrap_external.py",
@@ -1300,4 +1259,3 @@ const frozen_module_name_sets = struct {
         return names;
     }
 };
-
