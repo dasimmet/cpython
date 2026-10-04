@@ -5,10 +5,12 @@ const ConfigHeaderExt = @import("ConfigHeaderExt.zig");
 pub const Version = enum {
     @"3.11.13",
     @"3.12.11",
+    @"3.12.13",
     pub fn libName(self: Version) []const u8 {
         return switch (self) {
             .@"3.11.13" => "3.11",
             .@"3.12.11" => "3.12",
+            .@"3.12.13" => "3.12",
         };
     }
 
@@ -16,6 +18,7 @@ pub const Version = enum {
         return switch (self) {
             .@"3.11.13" => "June 3, 2025",
             .@"3.12.11" => "June 3, 2025",
+            .@"3.12.13" => "March 3, 2026",
         };
     }
 
@@ -23,7 +26,7 @@ pub const Version = enum {
         return switch (self) {
             .@"3.11.13" => @import("module-sources-3.11.13.zon"),
             .@"3.12.11" => @import("module-sources-3.12.11.zon"),
-            // else => .{},
+            .@"3.12.13" => @import("module-sources-3.12.13.zon"),
         };
     }
 
@@ -84,10 +87,7 @@ pub fn build(b: *std.Build) !void {
         }),
     });
 
-    const upstream: *std.Build.Dependency = switch (version) {
-        .@"3.11.13" => if (b.lazyDependency("upstream_3.11.13", .{})) |d| d else noUpstream(b),
-        .@"3.12.11" => if (b.lazyDependency("upstream_3.12.11", .{})) |d| d else noUpstream(b),
-    };
+    const upstream: *std.Build.Dependency = b.lazyDependency(b.fmt("upstream_{s}", .{@tagName(version)}), .{}) orelse noUpstream(b);
 
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
@@ -442,6 +442,12 @@ fn addMakesetup(
         .xxsubtype = false,
         ._xxinterpchannels = false,
     };
+    const @"stdlib_modules_3.12.13" = .{
+        ._ctypes = false,
+        ._sha2 = false,
+        .xxsubtype = false,
+        ._xxinterpchannels = false,
+    };
 
     const setup_bootstrap = blk: {
         const replace = b.addRunArtifact(args.replace_exe);
@@ -466,6 +472,10 @@ fn addMakesetup(
             .@"3.12.11" => {
                 replace.addArg("MODULE__CTYPES_MALLOC_CLOSURE=");
                 addReplaceModuleArgs(b, replace, @TypeOf(@"stdlib_modules_3.12.11"), @"stdlib_modules_3.12.11");
+            },
+            .@"3.12.13" => {
+                replace.addArg("MODULE__CTYPES_MALLOC_CLOSURE=");
+                addReplaceModuleArgs(b, replace, @TypeOf(@"stdlib_modules_3.12.13"), @"stdlib_modules_3.12.13");
             },
         }
         break :blk_stdlib out;
@@ -607,6 +617,7 @@ fn addPythonExe(
                 switch (args.pyconfig.version) {
                     .@"3.11.13" => &library_src_omit_frozen.@"3.11.13",
                     .@"3.12.11" => &library_src_omit_frozen.@"3.12.11",
+                    .@"3.12.13" => &library_src_omit_frozen.@"3.12.13",
                 },
             }),
             .bootstrap => concat(b.allocator, &.{
@@ -617,6 +628,7 @@ fn addPythonExe(
                 switch (args.pyconfig.version) {
                     .@"3.11.13" => &library_src_omit_frozen.@"3.11.13",
                     .@"3.12.11" => &library_src_omit_frozen.@"3.12.11",
+                    .@"3.12.13" => &library_src_omit_frozen.@"3.12.13",
                 },
             }),
             .final => concat(b.allocator, &.{
@@ -628,6 +640,7 @@ fn addPythonExe(
                 switch (args.pyconfig.version) {
                     .@"3.11.13" => &library_src_omit_frozen.@"3.11.13",
                     .@"3.12.11" => &library_src_omit_frozen.@"3.12.11",
+                    .@"3.12.13" => &library_src_omit_frozen.@"3.12.13",
                 },
             }),
         },
@@ -638,6 +651,7 @@ fn addPythonExe(
                 .@"3.11.13" => &.{"-fno-sanitize=alignment"},
                 // tokenizer.c uses pointer overflow in restore_fstring_buffers
                 .@"3.12.11" => &.{"-fno-sanitize=pointer-overflow"},
+                .@"3.12.13" => &.{"-fno-sanitize=pointer-overflow"},
             },
         }),
     });
@@ -867,7 +881,7 @@ fn addPyconfig(
             .TIME_WITH_SYS_TIME = 1,
             .FLOAT_WORDS_BIGENDIAN = null,
         }),
-        .@"3.12.11" => config_header.addValues(.{
+        .@"3.12.11", .@"3.12.13" => config_header.addValues(.{
             .ALIGNOF_MAX_ALIGN_T = @as(u32, switch (t.cpu.arch) {
                 .x86_64, .aarch64 => 16,
                 .x86, .arm => 8,
@@ -909,10 +923,7 @@ fn addPyconfig(
         if (libs.zlib) |zlib| run.addPrefixedDirectoryArg("-I", zlib.getEmittedIncludeTree());
         if (libs.openssl) |openssl| run.addPrefixedDirectoryArg("-I", openssl.getEmittedIncludeTree());
         run.addFileArg(b.path("config-common"));
-        run.addFileArg(switch (version) {
-            .@"3.11.13" => b.path("config-3.11.13"),
-            .@"3.12.11" => b.path("config-3.12.11"),
-        });
+        run.addFileArg(b.path(b.fmt("config-{s}", .{@tagName(version)})));
         run.addArg("-o");
         ConfigHeaderExt.addFile(config_header, run.addOutputFileArg("config"));
     }
@@ -1012,6 +1023,16 @@ const python_src = struct {
         "Python/tracemalloc.c",
         "Python/perf_trampoline.c",
     };
+    pub const @"3.12.13" = common ++ .{
+        "Python/assemble.c",
+        "Python/flowgraph.c",
+        "Python/ceval_gil.c",
+        "Python/instrumentation.c",
+        "Python/intrinsics.c",
+        "Python/legacy_tracing.c",
+        "Python/tracemalloc.c",
+        "Python/perf_trampoline.c",
+    };
 };
 
 const object_src = struct {
@@ -1066,6 +1087,9 @@ const object_src = struct {
     pub const @"3.12.11" = common ++ .{
         "Objects/typevarobject.c",
     };
+    pub const @"3.12.13" = common ++ .{
+        "Objects/typevarobject.c",
+    };
 };
 
 const parser_src = [_][]const u8{
@@ -1093,6 +1117,7 @@ const module_src = [_][]const u8{
 const library_src_omit_frozen = struct {
     pub const @"3.11.13" = parser_src ++ object_src.@"3.11.13" ++ python_src.@"3.11.13" ++ module_src;
     pub const @"3.12.11" = parser_src ++ object_src.@"3.12.11" ++ python_src.@"3.12.11" ++ module_src;
+    pub const @"3.12.13" = parser_src ++ object_src.@"3.12.13" ++ python_src.@"3.12.13" ++ module_src;
 };
 
 fn ci(
